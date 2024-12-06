@@ -14,7 +14,7 @@ except Exception as err:
 
 
 class TSDF:
-    def __init__(self, volume_bounds, voxel_size, trunc_margin, run_on_gpu=False):
+    def __init__(self, volume_bounds, voxel_size, trunc_margin, run_on_gpu=False, verbose=True):
         """
         volume_bounds -- the min and max bounds of the volume
         voxel_size -- the size of each voxel
@@ -35,7 +35,10 @@ class TSDF:
         )
         self.volume_center = (self.volume_bounds[:, 0] + self.volume_bounds[:, 1]) / 2
         self.volume_origin = self.volume_center - self.volume_dims * voxel_size / 2
-        print("Volume dims: ", self.volume_dims)
+        self.verbose = verbose
+        
+        if self.verbose:
+            print("Volume dims: ", self.volume_dims)
 
         if not self.run_on_gpu:
             # store voxel coords
@@ -91,16 +94,17 @@ class TSDF:
 
         # gpu device details
         gpu_device = pycuda.autoinit.device
-        print("Using GPU: ", gpu_device.name())
-        print(
-            f"Maximum number of threads per block: {gpu_device.MAX_THREADS_PER_BLOCK}"
-        )
-        print(
-            f"Maximum block dimension: {gpu_device.MAX_BLOCK_DIM_X}, {gpu_device.MAX_BLOCK_DIM_Y}, {gpu_device.MAX_BLOCK_DIM_Z}"
-        )
-        print(
-            f"Maximum grid dimension: {gpu_device.MAX_GRID_DIM_X}, {gpu_device.MAX_GRID_DIM_Y}, {gpu_device.MAX_GRID_DIM_Z}"
-        )
+        if self.verbose:
+            print("Using GPU: ", gpu_device.name())
+            print(
+                f"Maximum number of threads per block: {gpu_device.MAX_THREADS_PER_BLOCK}"
+            )
+            print(
+                f"Maximum block dimension: {gpu_device.MAX_BLOCK_DIM_X}, {gpu_device.MAX_BLOCK_DIM_Y}, {gpu_device.MAX_BLOCK_DIM_Z}"
+            )
+            print(
+                f"Maximum grid dimension: {gpu_device.MAX_GRID_DIM_X}, {gpu_device.MAX_GRID_DIM_Y}, {gpu_device.MAX_GRID_DIM_Z}"
+            )
 
         # set the block and grid size
         self.block_size = (int(gpu_device.MAX_THREADS_PER_BLOCK), int(1), int(1))
@@ -117,7 +121,8 @@ class TSDF:
             gpu_device.MAX_GRID_DIM_Z, int(np.ceil(rem_threads / self.block_size[2]))
         )
         self.grid_size = (grid_size_x, grid_size_y, grid_size_z)
-        print(f"Block size: {self.block_size}, Grid size: {self.grid_size}")
+        if self.verbose:
+            print(f"Block size: {self.block_size}, Grid size: {self.grid_size}")
 
     def add_frame(
         self, frame_color_img, frame_depth_img, frame_pose, cam_intrinsics, weight=1
@@ -228,14 +233,26 @@ class TSDF:
         cam_intrinsics,
     ):
         for i in range(frame_count):
-            print("Fusing frame", i)
+            if self.verbose:
+                print("Fusing frame", i)
             self.add_frame(
                 frame_color_imgs[i], frame_depth_imgs[i], frame_poses[i], cam_intrinsics
             )
-
-    def save_mesh(self, file_name="tsdf_mesh.ply"):
+            
+    def get_tsdf(self):
         """
-        Generate a mesh from the TSDF volume.
+        Return the TSDF volume.
+        """
+        if self.run_on_gpu:
+            # copy data from the GPU
+            cuda.memcpy_dtoh(self.tsdf, self.tsdf_gpu)
+            cuda.memcpy_dtoh(self.weight, self.weight_gpu)
+            cuda.memcpy_dtoh(self.color, self.color_gpu)
+        return self.tsdf, self.weight, self.color
+            
+    def marching_cubes(self):
+        """
+        Return the vertices and triangles using marching cubes.
         """
         if self.run_on_gpu:
             # copy data from the GPU
@@ -243,6 +260,13 @@ class TSDF:
             cuda.memcpy_dtoh(self.weight, self.weight_gpu)
             cuda.memcpy_dtoh(self.color, self.color_gpu)
         vertices, triangles = mcubes.marching_cubes(self.tsdf, 0)
+        return vertices, triangles
+    
+    def save_mesh(self, file_name="tsdf_mesh.ply"):
+        """
+        Generate a mesh from the TSDF volume.
+        """
+        vertices, triangles = self.marching_cubes()
         cvx, cvy, cvz = np.round(vertices).astype(int).T
         vertices_world = vertices * self.voxel_size + self.volume_origin
         colors = self.color[cvx, cvy, cvz]
@@ -254,12 +278,7 @@ class TSDF:
         """
         Generate a point cloud from the TSDF volume.
         """
-        if self.run_on_gpu:
-            # copy data from the GPU
-            cuda.memcpy_dtoh(self.tsdf, self.tsdf_gpu)
-            cuda.memcpy_dtoh(self.weight, self.weight_gpu)
-            cuda.memcpy_dtoh(self.color, self.color_gpu)
-        vertices, triangles = mcubes.marching_cubes(self.tsdf, 0)
+        vertices, triangles = self.marching_cubes()
         cvx, cvy, cvz = np.round(vertices).astype(int).T
         vertices_world = vertices * self.voxel_size + self.volume_origin
         colors = self.color[cvx, cvy, cvz]
@@ -327,6 +346,8 @@ def get_volume_bounds(frame_count, frame_depth_imgs, frame_poses, cam_intrinsics
     Calculate the bounds of the TSDF volume based on the camera frustum of all the frames.
     """
     volume_bounds = np.zeros((3, 2)) # min and max bounds
+    volume_bounds[:, 0] = np.inf
+    volume_bounds[:, 1] = -np.inf
     inv_cam_intrinsics = np.linalg.inv(cam_intrinsics)
     for i in range(frame_count):
         min_bounds, max_bounds = view_frustrum_limits(frame_poses[i], frame_depth_imgs[i], inv_cam_intrinsics)
