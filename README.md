@@ -2,7 +2,7 @@
 
 ## Overview
 
-This repository contains a comprehensive pipeline for real-time **3D reconstruction** and **nearest 6 Degrees of Freedom (6DOF) pose estimation** from monocular RGB-D video data. The approach integrates various computer vision and robotics techniques to deliver accurate pose estimation, which is essential for applications in augmented reality, robotics, and autonomous systems.
+This repository contains a comprehensive pipeline for real-time **3D reconstruction** and **nearest 6 Degrees of Freedom (6DOF) pose estimation** from monocular RGB video data. The approach integrates various computer vision and robotics techniques to deliver accurate pose estimation, which is essential for applications in augmented reality, robotics, and autonomous systems.
 
 - Real-time 3D model construction using **Truncated Signed Distance Function (TSDF)** fusion.
 - Accurate estimation of the object’s **6DOF pose**.
@@ -25,6 +25,8 @@ The following datasets are utilized in this project:
 
 ## Contributors
 
-- Gaurav Behera (gaurav.behera@research.iiit.ac.in)
-- Samkit Jain (samkit.jain@students.iiit.ac.in)
-- Ansh Chablani (ansh.chablani@research.iiit.ac.in)
+- \*Gaurav Behera (gaurav.behera@research.iiit.ac.in)
+- \*Samkit Jain (samkit.jain@students.iiit.ac.in)
+- \*Ansh Chablani (ansh.chablani@research.iiit.ac.in)
+
+\* = Equal Contribution
